@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Traits\ApiResponses;
+use Illuminate\Database\Eloquent\Casts\Json;
 use Illuminate\Support\Facades\Auth;
+
+use function Laravel\Prompts\error;
 
 class EventController extends Controller
 {
@@ -38,5 +41,15 @@ class EventController extends Controller
         $events = $request->user()->events()->orderBy('week_day')->orderBy('lesson_number')->get();
 
         return $this->success('Fetched events successfully', $events);
+    }
+
+    public function destroy(Request $request, $id) : JsonResponse {
+        $event = $request->user()->events()->find($id);
+
+        if (!$event) {
+            return $this->error("Event doesn't exists");
+        }
+
+        return $this->success('Event successfully deleted', $event);
     }
 }
