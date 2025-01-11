@@ -10,6 +10,9 @@ Route::middleware(['auth:sanctum'])->group(function(){
         return $request->user();
     });
 
-    Route::apiResource('events', EventController::class);
-
+    Route::get('events', [EventController::class, 'index']);
+    Route::post('events', [EventController::class, 'store']);
+    Route::delete('events/{id}', [EventController::class, 'destroy']);
+    Route::get('/events/week', [EventController::class, 'getWeek']);
+    Route::patch('/events/{id}', [EventController::class, 'update']);
 });
