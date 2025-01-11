@@ -16,11 +16,10 @@ return new class extends Migration
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->string('title');
             $table->string('teacher')->nullable();
-            $table->unsignedTinyInteger('week_day'); //от 1 до 7
+            $table->date('date'); //дата начала пары
             $table->unsignedTinyInteger('lesson_number'); //от 1 до 8
             $table->timestamps();
 
-            $table->unique(['user_id', 'week_day', 'lesson_number']);
         });
     }
 

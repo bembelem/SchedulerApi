@@ -11,7 +11,7 @@ class Event extends Model
         'user_id', 
         'title', 
         'teacher', 
-        'week_day', 
+        'date', 
         'lesson_number'
     ];
     
