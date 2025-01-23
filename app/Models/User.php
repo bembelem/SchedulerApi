@@ -54,4 +54,11 @@ class User extends Authenticatable implements CanResetPassword
         return $this->hasMany(Event::class);
     }
 
+    public function weektemplates()
+    {
+        return $this->hasMany(WeekTemplate::class);
+    }
+
+    
+
 }
