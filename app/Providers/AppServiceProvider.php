@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Http\Services\EventService;
+use App\Http\Services\TemplateService;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\ServiceProvider;
 
@@ -12,7 +14,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(EventService::class, function ($app) {
+            return new EventService();
+        });
+        
+        $this->app->singleton(TemplateService::class, function ($app) {
+            return new TemplateService();
+        });
     }
 
     /**
