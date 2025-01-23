@@ -14,10 +14,22 @@ return new class extends Migration
         Schema::create('events', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
-            $table->string('title');
+            $table->enum('type', ['', 'practice', 'lecture'])->default('');
+            $table->string('name');
+            $table->string('room');
             $table->string('teacher')->nullable();
-            $table->date('date'); //дата начала пары
-            $table->unsignedTinyInteger('lesson_number'); //от 1 до 8
+
+            $table->date('date');
+            $table->unsignedTinyInteger('order');
+            $table->enum('day', ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+
+            $table->string('homework')->nullable();
+            $table->text('notes')->nullable();
+
+            $table->boolean('test')->default(false);
+            $table->boolean('project')->default(false);
+            $table->boolean('colloquium')->default(false);
+
             $table->timestamps();
 
         });
