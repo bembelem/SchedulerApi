@@ -3,140 +3,142 @@
 namespace App\Http\Controllers\Schedule;
 
 use App\Http\Controllers\Controller;
-use App\Models\Event;
-use App\Models\User;
+use App\Http\Requests\StoreEventRequest;
+use App\Http\Requests\UpdateEventRequest;
+use App\Http\Requests\UpdateWeekRequest;
+use App\Http\Services\EventService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Traits\ApiResponses;
-use Illuminate\Database\Eloquent\Casts\Json;
-use Illuminate\Support\Facades\Auth;
 use Carbon\Carbon;
-use GrahamCampbell\ResultType\Success;
-
-use function Laravel\Prompts\error;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 
 class EventController extends Controller
 {
     use ApiResponses;
 
-    public function store(Request $request) : JsonResponse { 
-        // Создание события (пары или другой информации)
-        $validated = $request->validate([
-            'title' => 'required|string|max:255',
-            'teacher' => 'nullable|string|max:255',
-            'lesson_number' => 'required|integer|between:1,8',
-            'date' => 'required|date'
-        ]);
-    
-        // Проверка на дублирование пары
-        if ($request->user()->events()->where([
-            ['date', $validated['date']],
-            ['lesson_number', $validated['lesson_number']]
-            ])->exists()) {
-            return $this->error(message:'Lesson already exists for this time slot');
-        }
+    protected EventService $eventService;
 
-        $event = $request->user()->events()->create($validated);
-        return $this->success('Event was successfully created', $event);
+    public function __construct(EventService $eventService)
+    {
+        $this->eventService = $eventService;
     }
 
-    public function index(Request $request) : JsonResponse { 
-        // Получение всех событий пользователя отсортированных по времени
-        $events = $request->user()->events()->orderBy('date')->orderBy('lesson_number')->get();
+    /**
+     * Создание нового события.
+     */
+    public function store(StoreEventRequest $request): JsonResponse
+    {
+        $event = $this->eventService->createEvent($request->user(), $request->validated());
 
-        return $this->success('Fetched events successfully', $events);
+        return $this->success('Event was successfully created', ['event'=>$event], 201);
     }
 
-    public function destroy(Request $request, $id) : JsonResponse {
-        $event = $request->user()->events()->find($id);
+    /**
+     * Получение всех событий пользователя, отсортированных по времени.
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $events = $request->user()->events()->orderBy('date')->orderBy('order')->paginate(10);
 
-        if (!$event) {
-            return $this->error("Event doesn't exists");
-        }
-
-        $event->delete();
-        return response()->json([], 204);
+        return $this->paginate(
+            'Events fetched successfully', 
+            (object)$events->items(), 
+            [
+                'current_page' => $events->currentPage(),
+                'total' => $events->total(),
+                'per_page' => $events->perPage(),
+            ]
+        );
     }
 
-    public function update(Request $request, $id) : JsonResponse {
-        $event = Event::find($id);
-
-        if (!$event) {
-            return error(message: 'Event not found');
-        }
-
-            // Проверяем, принадлежит ли событие текущему пользователю
-        if ($event->user_id !== request()->user()->id) {
-            return $this->error("Forbidden", 403);
-        }
-
-        $validated = $request->validate([
-            'title' => 'nullable|string|max:255',
-            'teacher' => 'nullable|string|max:255',
-            'lesson_number' => 'nullable|integer|between:1,8',
-            'date' => 'nullable|date'
-        ]); 
-
-        if ($request->has('title')){
-            $event->title = $request->input('title');
-        }
-        if ($request->has('teacher')){
-            $event->teacher = $request->input('teacher');
-        }
-        if ($request->has('lesson_number')){
-            $event->title = $request->input('lesson_number');
-        }
-        if ($request->has('date')){
-            $event->title = $request->input('date');
-        }
+    /**
+     * Обновление существующего события.
+     */
+    public function update(UpdateEventRequest $request, $id): JsonResponse
+    {
+        $event = $this->eventService->updateEvent($request->user(), $id, $request->validated());
         
-        $event->save();
-        
-        return $this->success('Event updated successfully', $event);
+        return $this->success('Event updated successfully', ['event' => $event]);
     }
 
-    public function getWeek(Request $request) : JsonResponse {
-        $shift = (int)$request->query('shift', 0); // Получаем shift из query-параметров
-        $startOfWeek = $this->getStartOfWeek($shift);
-        $endOfWeek = $startOfWeek->copy()->endOfWeek(); // Начало и конец недели
-    
+    /**
+     * Удаление события.
+     */
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        $this->eventService->deleteEvent($request->user(), $id);
+
+        return $this->noContent();
+    }
+
+    /**
+     * Получение событий недели.
+     */
+    public function getWeek(Request $request): JsonResponse
+    {
+        $shift = (int)$request->input('shift');
+        $week = $this->eventService->getWeekEvents($request->user(), $shift);
+        return $this->success("Week fetched successfully", ['week'=>$week]);
+    }
+
+    /**
+     * Обновление всех событий недели.
+     */
+
+     public function updateWeek(UpdateWeekRequest $request): JsonResponse
+     {
+        $shift = (int)$request->input('shift');
+        $weekData = $request->validated();
+
+        $startOfWeek = Carbon::now()->startOfWeek()->addWeeks($shift);
+        $endOfWeek = $startOfWeek->copy()->endOfWeek();
+
         $events = $request->user()->events()
             ->whereBetween('date', [$startOfWeek, $endOfWeek])
             ->orderBy('date')
-            ->orderBy('lesson_number') // Сортируем сначала по дате, а затем по номеру пары
+            ->orderBy('order')
             ->get();
+ 
+        DB::beginTransaction();
+         
+        foreach ($weekData['week'] as $day => $events) {
+            foreach ($events as $eventData) {
 
-            $daysMap = [
-                0 => 'monday',
-                1 => 'tuesday',
-                2 => 'wednesday',
-                3 => 'thursday',
-                4 => 'friday',
-                5 => 'saturday',
-                6 => 'sunday'
-            ];
+                if (isset($eventData['id'])) { // Если установлен id то надо обновить ивент
 
-            $week = [
-                'monday'    => [],
-                'tuesday'   => [],
-                'wednesday' => [],
-                'thursday'  => [],
-                'friday'    => [],
-                'saturday'  => [],
-                'sunday'    => []
-            ];
-            
-            foreach ($events as $event) {
-                $dayOfWeek = (Carbon::parse($event->date)->dayOfWeek - 1 + 7) % 7; // Номер дня недели, где вс - 0, пн - 1...
-                $dayKey = $daysMap[$dayOfWeek]; // Преобразуем числовой индекс в строковый ключ
-                $week[$dayKey][] = $event;
+                    $this->eventService->updateEvent($request->user(), $eventData['id'], $eventData);
+
+                } else {
+                    // Если это новое событие, проверяем обязательные поля
+                    Validator::make($eventData, [
+                        'name' => 'required|string',
+                        'room' => 'required|string|max:255',
+                        'order' => 'required|integer|between:1,8',
+                        'date' => 'required|date',
+                    ])->validate();
+
+                        
+                    $this->eventService->createEvent($request->user(), $eventData);
+                }
             }
-            return $this->success("Week fetched successfully", $week);
         }
-            
 
-    private function getStartOfWeek($shift = 0)
-    {
-        return Carbon::now()->startOfWeek()->addWeeks($shift);
+        DB::commit();
+        return $this->success('Events updated successfully');
     }
+     
+
+    public function deleteWeek(Request $request): JsonResponse
+    {
+        $shift = (int)$request->shift;
+        $startOfWeek = Carbon::now()->startOfWeek()->addWeeks($shift);
+        $endOfWeek = $startOfWeek->copy()->endOfWeek();
+
+        $this->eventService->deleteWeekEvents($request->user(), $startOfWeek, $endOfWeek);
+
+        return $this->noContent();
+    }
+    
 }
